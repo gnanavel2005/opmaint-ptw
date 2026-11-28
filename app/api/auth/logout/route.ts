@@ -1,5 +1,5 @@
 
-export const dynamic = 'force-dynamic';
+
 
 import { clearCookie } from '../../../../src/lib/auth';
 import { json, route } from '../../../../src/lib/http';
