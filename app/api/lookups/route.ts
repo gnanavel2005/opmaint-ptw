@@ -1,7 +1,9 @@
+
 import { pool } from '../../../src/lib/db';
 import { json, route, requireUser } from '../../../src/lib/http';
 import { PERMIT_TYPES } from '../../../src/domain/permitTypes';
 
+export const dynamic = 'force-dynamic';
 
 // Reference data for filters and forms: areas, equipment and the permit type registry.
 export const GET = route(async (req) => {
