@@ -82,7 +82,7 @@ function NewPermit({ user }: { user: { role: string } }) {
     setErr('');
     try {
       if (!permitType) throw new Error('Choose a permit type');
-      const typeData = Object.fromEntries(permitType.fields.flatMap(field => {
+      const typeData = Object.fromEntries(permitType.fields.flatMap((field): [string, unknown][] => {
         const value = typeValues[field.key] ?? '';
         if (!value) return [];
         if (field.kind === 'number') return [[field.key, Number(value)]];

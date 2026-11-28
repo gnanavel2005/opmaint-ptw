@@ -29,7 +29,7 @@ CREATE TABLE permits (
   precautions jsonb NOT NULL DEFAULT '[]',   -- [{text, done}]
   type_data jsonb NOT NULL DEFAULT '{}',
   completion_notes text,
-  created_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),npm run build
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (planned_end > planned_start)
 );
