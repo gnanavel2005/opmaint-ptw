@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { transition, availableActions, DomainError, Actor, PermitState, Status } from '../src/domain/stateMachine';
+import { transition, availableActions, effectiveStatus, DomainError, Actor, PermitState, Status } from '../src/domain/stateMachine';
 import { PERMIT_TYPES, validateTypeData } from '../src/domain/permitTypes';
 
 const start = new Date('2026-01-01T08:00:00Z'), end = new Date('2026-01-01T16:00:00Z');
@@ -38,6 +38,9 @@ describe('lifecycle', () => {
     expect(code(() => transition(permit('ACTIVE'), 'expire', SYS, noon))).toBe('NOT_EXPIRED');
     expect(code(() => transition(permit('ACTIVE'), 'expire', SO, late))).toBe('FORBIDDEN');
     expect(transition(permit('ACTIVE'), 'expire', SYS, late).to).toBe('EXPIRED');
+    expect(transition(permit('PENDING_APPROVAL'), 'expire', SYS, late).to).toBe('EXPIRED');
+    expect(effectiveStatus(permit('PENDING_APPROVAL'), late)).toBe('EXPIRED');
+    expect(availableActions(permit('PENDING_APPROVAL'), OWNER, late)).not.toContain('approve');
     expect(code(() => transition(permit('EXPIRED'), 'activate', SO, noon))).toBe('ILLEGAL_TRANSITION');
     expect(code(() => transition(permit('EXPIRED'), 'resume', SO, noon))).toBe('ILLEGAL_TRANSITION');
     expect(code(() => transition(permit('APPROVED', { approvals: allApproved }), 'activate', REQ, late))).toBe('WINDOW_PASSED');
@@ -66,6 +69,17 @@ describe('permissions', () => {
   it('area owner approves only their own area; requester approves nothing', () => {
     expect(code(() => transition(permit('PENDING_APPROVAL'), 'approve', OTHER_OWNER, noon, { slot: 'AREA_OWNER' }))).toBe('FORBIDDEN');
     expect(code(() => transition(permit('PENDING_APPROVAL'), 'approve', { id: 7, role: 'REQUESTER', areaIds: [] }, noon, { slot: 'AREA_OWNER' }))).toBe('FORBIDDEN');
+    expect(code(() => transition(permit('PENDING_APPROVAL'), 'approve', OWNER, noon, { slot: 'SAFETY_OFFICER' }))).toBe('FORBIDDEN');
+    expect(availableActions(permit('PENDING_APPROVAL'), OWNER, noon)).toContain('approve');
+    expect(availableActions(permit('PENDING_APPROVAL'), OTHER_OWNER, noon)).not.toContain('approve');
+  });
+  it('only the slot role can approve, including for admins', () => {
+    const admin: Actor = { id: 5, role: 'ADMIN', areaIds: [] };
+    expect(code(() => transition(permit('PENDING_APPROVAL'), 'approve', admin, noon, { slot: 'AREA_OWNER' }))).toBe('FORBIDDEN');
+    expect(code(() => transition(permit('PENDING_APPROVAL'), 'approve', admin, noon, { slot: 'SAFETY_OFFICER' }))).toBe('FORBIDDEN');
+    expect(code(() => transition(permit('PENDING_APPROVAL'), 'approve', SO, noon, { slot: 'AREA_OWNER' }))).toBe('FORBIDDEN');
+    expect(availableActions(permit('PENDING_APPROVAL'), admin, noon)).not.toContain('approve');
+    expect(transition(permit('PENDING_APPROVAL'), 'approve', SO, noon, { slot: 'SAFETY_OFFICER' }).to).toBe('PENDING_APPROVAL');
   });
   it('rejection needs a reason', () => {
     expect(code(() => transition(permit('PENDING_APPROVAL'), 'reject', SO, noon, { slot: 'SAFETY_OFFICER' }))).toBe('COMMENT_REQUIRED');

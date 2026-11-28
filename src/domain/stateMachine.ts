@@ -29,7 +29,7 @@ const T: Record<Action, { from: Status[]; to?: Status }> = {
   activate: { from: ['APPROVED'], to: 'ACTIVE' },
   suspend:  { from: ['ACTIVE'], to: 'SUSPENDED' },
   resume:   { from: ['SUSPENDED'], to: 'ACTIVE' },
-  expire:   { from: ['APPROVED', 'ACTIVE', 'SUSPENDED'], to: 'EXPIRED' },
+  expire:   { from: ['PENDING_APPROVAL', 'APPROVED', 'ACTIVE', 'SUSPENDED'], to: 'EXPIRED' },
   close:    { from: ['ACTIVE'], to: 'CLOSED' },
   verify:   { from: ['CLOSED'], to: 'CLOSED_VERIFIED' },
   cancel:   { from: ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'ACTIVE', 'SUSPENDED'], to: 'CANCELLED' },
@@ -58,8 +58,7 @@ export function transition(p: PermitState, action: Action, actor: Actor, now: Da
       slot = input.slot ?? fail('SLOT_REQUIRED', 'Approval slot is required');
       const a = p.approvals.find(x => x.slot === slot);
       if (!a || a.status !== 'PENDING') fail('NOT_PENDING', 'No pending approval for that slot');
-      allow(actor.role === 'ADMIN' ||
-        (actor.role === slot && (slot === 'SAFETY_OFFICER' || actor.areaIds.includes(p.areaId))),
+      allow(actor.role === slot && (slot === 'SAFETY_OFFICER' || actor.areaIds.includes(p.areaId)),
         'You are not an approver for this permit');
       if (expired) fail('WINDOW_PASSED', 'Validity window has passed; raise a new permit');
       if (action === 'reject') { needComment('A rejection reason'); slotStatus = 'REJECTED'; }
@@ -93,7 +92,7 @@ export function transition(p: PermitState, action: Action, actor: Actor, now: Da
 
 /** For reads: a permit past its window is EXPIRED even if the cron job has not run yet. */
 export function effectiveStatus(p: PermitState, now: Date): Status {
-  return (['APPROVED', 'ACTIVE', 'SUSPENDED'] as Status[]).includes(p.status) && now >= p.plannedEnd ? 'EXPIRED' : p.status;
+  return (['PENDING_APPROVAL', 'APPROVED', 'ACTIVE', 'SUSPENDED'] as Status[]).includes(p.status) && now >= p.plannedEnd ? 'EXPIRED' : p.status;
 }
 
 /** Which buttons to show this user. Uses the same rules as transition(), so UI and API cannot drift. */

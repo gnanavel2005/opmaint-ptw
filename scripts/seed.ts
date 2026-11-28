@@ -1,4 +1,4 @@
-// Seed: 4 users (one per role), 2 plants, 4 areas, 6 equipment, 11 permits across every status.
+// Seed: 5 users (one requester, two area owners, one safety officer, one admin), 2 plants, 4 areas, 6 equipment, 11 permits across every status.
 // Run: npx tsx scripts/seed.ts   (needs DATABASE_URL in .env.local)
 import { config } from 'dotenv';
 import { Client } from 'pg';
@@ -31,11 +31,11 @@ const PPE: Record<string, string[]> = {
   WORKING_AT_HEIGHT: ['Helmet', 'Safety shoes', 'Full body harness'], ELECTRICAL_LOTO: ['Helmet', 'Safety shoes', 'Insulated gloves'],
 };
 
-type Who = 'req' | 'own' | 'so' | 'adm' | 'sys';
+type Who = 'req' | 'own' | 'own2' | 'so' | 'adm' | 'sys';
 type Step = [action: string, to: string, who: Who, comment?: string];
 const sub: Step = ['submit', 'PENDING_APPROVAL', 'req'];
 const ownOk: Step = ['approve', 'PENDING_APPROVAL', 'own', 'Area isolated and safe to proceed'];
-const admOk: Step = ['approve', 'PENDING_APPROVAL', 'adm', 'Area owner slot approved by admin (area has no owner)'];
+const own2Ok: Step = ['approve', 'PENDING_APPROVAL', 'own2', 'Area isolated and safe to proceed'];
 const soOk: Step = ['approve', 'APPROVED', 'so', 'Site inspected, precautions verified'];
 const act: Step = ['activate', 'ACTIVE', 'req'];
 const close: Step = ['close', 'CLOSED', 'req', 'Work complete, area cleaned'];
@@ -47,11 +47,11 @@ const specs = [
   { type: 'CONFINED_SPACE', area: 'boiler', equip: 'BLR-02', desc: 'Inspect and clean feed water tank', who: 'Aqua Services', s: 2, e: 8, ago: 0.5, flow: [sub, ownOk, soOk] },
   { type: 'HOT_WORK', area: 'boiler', equip: 'BLR-01', desc: 'Grind and weld steam line flange', who: 'Sharma Fabricators', s: -2, e: 6, ago: 2, flow: [sub, ownOk, soOk, act] },
   { type: 'ELECTRICAL_LOTO', area: 'pump', equip: 'PMP-102', desc: 'Megger test and terminal tightening on P-102 motor', who: 'Volt Electricals', s: -5, e: 1.5, ago: 5, flow: [sub, ownOk, soOk, act] },
-  { type: 'CONFINED_SPACE', area: 'tank', equip: 'TNK-201', desc: 'Internal inspection of storage tank', who: 'Aqua Services', s: -3, e: 5, ago: 1, flow: [sub, admOk, soOk, act, ['suspend', 'SUSPENDED', 'so', 'Gas alarm in adjacent unit'] as Step] },
+  { type: 'CONFINED_SPACE', area: 'tank', equip: 'TNK-201', desc: 'Internal inspection of storage tank', who: 'Aqua Services', s: -3, e: 5, ago: 1, flow: [sub, own2Ok, soOk, act, ['suspend', 'SUSPENDED', 'so', 'Gas alarm in adjacent unit'] as Step] },
   { type: 'HOT_WORK', area: 'tank', equip: 'TNK-201', desc: 'Cut and weld drain nozzle', who: 'Sharma Fabricators', s: 5, e: 12, ago: 3, flow: [sub, ['reject', 'REJECTED', 'so', 'Gas test missing, retest and resubmit'] as Step] },
   { type: 'WORKING_AT_HEIGHT', area: 'boiler', equip: 'BLR-01', desc: 'Paint structural steel on boiler platform', who: 'Kumar Scaffolding', s: -10, e: -2, ago: 1.5, flow: [sub, ownOk, soOk, act, close] },
   { type: 'ELECTRICAL_LOTO', area: 'pump', equip: 'PMP-101', desc: 'Replace motor bearings on P-101', who: 'Volt Electricals', s: -52, e: -44, ago: 40, flow: [sub, ownOk, soOk, act, close, ['verify', 'CLOSED_VERIFIED', 'so', 'Area inspected, permit closed'] as Step] },
-  { type: 'HOT_WORK', area: 'fab', equip: 'FAB-01', desc: 'Cut and weld handrail', who: 'Sharma Fabricators', s: -30, e: -16, ago: 16, flow: [sub, admOk, soOk, act, ['expire', 'EXPIRED', 'sys', 'Validity window passed'] as Step] },
+  { type: 'HOT_WORK', area: 'fab', equip: 'FAB-01', desc: 'Cut and weld handrail', who: 'Sharma Fabricators', s: -30, e: -16, ago: 16, flow: [sub, own2Ok, soOk, act, ['expire', 'EXPIRED', 'sys', 'Validity window passed'] as Step] },
 ];
 
 async function main() {
@@ -73,6 +73,7 @@ async function main() {
     const U: Record<Who, number | null> = {
       req: await user('requester@demo.com', 'Arun (Requester)', 'REQUESTER'),
       own: await user('owner@demo.com', 'Meena (Area Owner)', 'AREA_OWNER'),
+      own2: await user('owner2@demo.com', 'Divya (Area Owner)', 'AREA_OWNER'),
       so: await user('safety@demo.com', 'Karthik (Safety Officer)', 'SAFETY_OFFICER'),
       adm: await user('admin@demo.com', 'Admin', 'ADMIN'),
       sys: null,
@@ -85,8 +86,9 @@ async function main() {
       boiler: await area(p1, 'Boiler House'), pump: await area(p1, 'Pump Station'),
       tank: await area(p2, 'Tank Farm'), fab: await area(p2, 'Fabrication Shop'),
     };
-    // The area owner owns only the two Plant 1 areas; Plant 2 areas have no owner, so admin fills that slot.
-    for (const a of ['boiler', 'pump']) await db.query('INSERT INTO user_areas(user_id,area_id) VALUES($1,$2)', [U.own, A[a]]);
+    // Meena owns the permit's Fabrication Shop area; Divya owns Tank Farm.
+    for (const a of ['boiler', 'pump', 'fab']) await db.query('INSERT INTO user_areas(user_id,area_id) VALUES($1,$2)', [U.own, A[a]]);
+    await db.query('INSERT INTO user_areas(user_id,area_id) VALUES($1,$2)', [U.own2, A.tank]);
 
     const equip = (a: string, tag: string, name: string) =>
       one('INSERT INTO equipment(area_id,tag,name) VALUES($1,$2,$3) RETURNING id', [A[a], tag, name]).then(id => [tag, id] as const);
@@ -138,8 +140,8 @@ async function main() {
           [id, slot, s.status, s.by, s.comment ?? null, s.at ?? null]);
     }
     await db.query('COMMIT');
-    console.log(`Seeded: 4 users, 2 plants, 4 areas, 6 equipment, ${specs.length} permits.`);
-    console.log('Login (all passwords: Demo@1234): requester@demo.com, owner@demo.com, safety@demo.com, admin@demo.com');
+    console.log(`Seeded: 5 users, 2 plants, 4 areas, 6 equipment, ${specs.length} permits.`);
+    console.log('Login (all passwords: Demo@1234): requester@demo.com, owner@demo.com, owner2@demo.com, safety@demo.com, admin@demo.com');
   } catch (e) {
     await db.query('ROLLBACK').catch(() => {});
     throw e;
